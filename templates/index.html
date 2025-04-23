@@ -1,0 +1,312 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF to Markdown Converter</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .container {
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #0d6efd;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .upload-area {
+            border: 2px dashed #adb5bd;
+            border-radius: 5px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+        }
+        .upload-area:hover {
+            border-color: #0d6efd;
+        }
+        .upload-area.drag-over {
+            background-color: #e2e3e5;
+            border-color: #0d6efd;
+        }
+        .file-info {
+            display: none;
+            padding: 15px;
+            background-color: #e9ecef;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .markdown-area {
+            display: none;
+        }
+        #markdownOutput {
+            width: 100%;
+            height: 500px;
+            padding: 15px;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            font-family: monospace;
+        }
+        .progress-area {
+            margin: 20px 0;
+            display: none;
+        }
+        #fileInput {
+            display: none;
+        }
+        .info-box {
+            background-color: #cff4fc;
+            border: 1px solid #b6effb;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .error-box {
+            background-color: #f8d7da;
+            border: 1px solid #f5c2c7;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PDF to Markdown Converter</h1>
+        
+        <div class="info-box">
+            <p>This tool converts PDF documents to Markdown format, preserving the document structure. It uses the <strong>MarkItDown</strong> library for high-quality conversions.</p>
+        </div>
+        
+        <div id="errorBox" class="error-box">
+            <strong>Error:</strong> <span id="errorMessage"></span>
+        </div>
+        
+        <div id="uploadArea" class="upload-area">
+            <p><i class="bi bi-cloud-arrow-up"></i> Drag & drop your PDF file here or click to browse</p>
+            <p><small>Maximum file size: 10MB</small></p>
+            <input type="file" id="fileInput" accept=".pdf">
+        </div>
+        
+        <div id="fileInfo" class="file-info">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>Selected file:</strong> <span id="fileName"></span>
+                </div>
+                <button class="btn btn-sm btn-danger" id="clearButton">Clear</button>
+            </div>
+        </div>
+        
+        <div class="text-center">
+            <button id="convertButton" class="btn btn-primary btn-lg" disabled>Convert to Markdown</button>
+        </div>
+        
+        <div id="progressArea" class="progress-area">
+            <div class="progress">
+                <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+            </div>
+            <p class="text-center mt-2" id="progressStatus">Processing...</p>
+        </div>
+        
+        <div id="markdownArea" class="markdown-area mt-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h3>Converted Markdown</h3>
+                <button id="downloadButton" class="btn btn-success">Download Markdown</button>
+            </div>
+            <textarea id="markdownOutput" readonly></textarea>
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const uploadArea = document.getElementById('uploadArea');
+            const fileInput = document.getElementById('fileInput');
+            const fileInfo = document.getElementById('fileInfo');
+            const fileName = document.getElementById('fileName');
+            const clearButton = document.getElementById('clearButton');
+            const convertButton = document.getElementById('convertButton');
+            const progressArea = document.getElementById('progressArea');
+            const progressBar = document.getElementById('progressBar');
+            const progressStatus = document.getElementById('progressStatus');
+            const markdownArea = document.getElementById('markdownArea');
+            const markdownOutput = document.getElementById('markdownOutput');
+            const downloadButton = document.getElementById('downloadButton');
+            const errorBox = document.getElementById('errorBox');
+            const errorMessage = document.getElementById('errorMessage');
+            
+            let selectedFile = null;
+            
+            // Click to browse
+            uploadArea.addEventListener('click', function() {
+                fileInput.click();
+            });
+            
+            // Drag and drop functionality
+            uploadArea.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                uploadArea.classList.add('drag-over');
+            });
+            
+            uploadArea.addEventListener('dragleave', function() {
+                uploadArea.classList.remove('drag-over');
+            });
+            
+            uploadArea.addEventListener('drop', function(e) {
+                e.preventDefault();
+                uploadArea.classList.remove('drag-over');
+                
+                if (e.dataTransfer.files.length) {
+                    handleFileSelect(e.dataTransfer.files[0]);
+                }
+            });
+            
+            // File input change
+            fileInput.addEventListener('change', function() {
+                if (fileInput.files.length) {
+                    handleFileSelect(fileInput.files[0]);
+                }
+            });
+            
+            // Handle file selection
+            function handleFileSelect(file) {
+                // Check if it's a PDF
+                if (!file.type || file.type !== 'application/pdf') {
+                    showError('Please select a PDF file');
+                    return;
+                }
+                
+                // Check file size (10MB max)
+                if (file.size > 10 * 1024 * 1024) {
+                    showError('File size exceeds 10MB limit');
+                    return;
+                }
+                
+                // Clear previous error
+                hideError();
+                
+                selectedFile = file;
+                fileName.textContent = file.name;
+                fileInfo.style.display = 'block';
+                convertButton.disabled = false;
+                
+                // Hide results if previously shown
+                markdownArea.style.display = 'none';
+            }
+            
+            // Clear selection
+            clearButton.addEventListener('click', function() {
+                fileInfo.style.display = 'none';
+                selectedFile = null;
+                fileInput.value = '';
+                convertButton.disabled = true;
+                
+                // Hide results if shown
+                markdownArea.style.display = 'none';
+            });
+            
+            // Convert action
+            convertButton.addEventListener('click', function() {
+                if (!selectedFile) return;
+                
+                // Show progress
+                progressBar.style.width = '0%';
+                progressStatus.textContent = 'Processing...';
+                progressArea.style.display = 'block';
+                convertButton.disabled = true;
+                
+                // Create form data
+                const formData = new FormData();
+                formData.append('file', selectedFile);
+                
+                // Send to backend
+                fetch('/convert/', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(data => {
+                            throw new Error(data.error || 'Conversion failed');
+                        });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Show results
+                    markdownOutput.value = data.markdown;
+                    markdownArea.style.display = 'block';
+                    
+                    // Set download attributes
+                    downloadButton.setAttribute('data-filename', data.filename);
+                    downloadButton.setAttribute('data-content', data.markdown);
+                    
+                    // Update progress
+                    progressBar.style.width = '100%';
+                    progressStatus.textContent = 'Conversion complete!';
+                    
+                    // Re-enable convert button
+                    convertButton.disabled = false;
+                })
+                .catch(error => {
+                    showError(error.message || 'An error occurred during conversion');
+                    
+                    // Re-enable convert button
+                    convertButton.disabled = false;
+                    
+                    // Update progress
+                    progressBar.style.width = '0%';
+                    progressStatus.textContent = 'Failed';
+                })
+                .finally(() => {
+                    // Hide progress after a delay
+                    setTimeout(function() {
+                        progressArea.style.display = 'none';
+                    }, 2000);
+                });
+            });
+            
+            // Download button
+            downloadButton.addEventListener('click', function() {
+                const content = downloadButton.getAttribute('data-content');
+                const filename = downloadButton.getAttribute('data-filename');
+                
+                if (!content || !filename) return;
+                
+                const blob = new Blob([content], { type: 'text/markdown' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            });
+            
+            // Error handling
+            function showError(message) {
+                errorMessage.textContent = message;
+                errorBox.style.display = 'block';
+            }
+            
+            function hideError() {
+                errorBox.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>
